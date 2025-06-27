@@ -1,12 +1,12 @@
 import React from 'react';
-import '../styles/WebViewerLayout.css';
+import '../styles/FloatingToolbar.css';
 import {
   LucideRuler,
   LucideCuboid,
   LucideEye,
   LucideCamera,
   LucideSettings,
-} from 'lucide-react'; // ✅ make sure LucideSettings is imported
+} from 'lucide-react';
 
 const modes = [
   { id: 'view', label: 'View', icon: <LucideEye size={18} /> },
@@ -15,18 +15,13 @@ const modes = [
   { id: 'camera', label: 'Camera', icon: <LucideCamera size={18} /> },
 ];
 
-const WebViewerLayout = ({
+const FloatingToolbar = ({
   currentMode,
   onModeChange,
-  showColmap,
-  onToggleColmap,
-  showMesh,
-  onToggleMesh,
-  onToggleSettings, // ✅ FIX: Add this prop
-  children
+  onToggleSettings
 }) => {
   return (
-    <div className="floating-layout-container">
+    <div className="floating-toolbar-container">
       <div className="floating-toolbar">
         {modes.map((mode) => (
           <button
@@ -47,12 +42,11 @@ const WebViewerLayout = ({
           <LucideSettings size={18} />
         </button>
       </div>
-
-      <main className="viewer-canvas-container">
-        {children}
-      </main>
+      <div className="model-toggle-container">
+        <span style={{ marginRight: 8, color: '#ccc' }}>Render Mode:</span>
+      </div>
     </div>
   );
 };
 
-export default WebViewerLayout;
+export default FloatingToolbar;

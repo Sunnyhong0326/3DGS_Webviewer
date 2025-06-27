@@ -1,0 +1,16 @@
+# Development image using Node.js
+FROM node:20-slim
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+
+# Expose default Vite port
+EXPOSE 3000
+
+ENV VITE_DEV_SERVER_POLL=true
+
+CMD ["npx", "vite", "dev", "--", "--host", "--port=3000"]

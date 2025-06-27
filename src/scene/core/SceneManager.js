@@ -1,5 +1,3 @@
-// src/scene/core/SceneManager.js
-
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import CameraSwitcher from '../camera/CameraSwitcher.js';
@@ -8,6 +6,7 @@ import { loadTransformMatrix } from '../camera/TransformMatrixLoader.js';
 import { runRenderLoop } from './ViewerRenderer.js';
 import { getQueryParam } from '../../utils/queryParam.js';
 import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d';
+import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 
 export class SceneManager {
     constructor(canvas) {
@@ -24,10 +23,12 @@ export class SceneManager {
         this.cameraInfoCallback = null;
 
         this.splatPath = this.sceneId
-            ? `results/${this.sceneId}/point_cloud/splat.ply`
+            ? `results/${this.sceneId}/point_cloud/point_clod.ply`
             : '';
+        this.meshPath = this.sceneId
+            ? `results/${this.sceneId}/mesh/tsdf_fusion.ply` : '';
         
-        this.colmapPath = `results/${this.sceneId}/colmap/sparse/0/images.bin`;
+        this.colmapPath = `results/${this.sceneId}/colmap/images.bin`;
         this.transformPath = `results/${this.sceneId}/colmap/transform.txt`;
     }
 
@@ -39,7 +40,8 @@ export class SceneManager {
         this.cameraSwitcher = new CameraSwitcher(this.scene, this.renderer, this.mainCamera, this.controls);
 
         await loadColmapCameras(this.colmapPath, this.scene, this.cameraSwitcher);
-        this.viewer = await this.loadGaussianScene();
+        // this.viewer = await this.loadGaussianScene();
+        await this.loadMeshModel();
 
         const transformMatrix = await loadTransformMatrix(this.transformPath);
 
@@ -47,7 +49,6 @@ export class SceneManager {
             scene: this.scene,
             renderer: this.renderer,
             controls: this.controls,
-            cameraSwitcher: this.cameraSwitcher,
             mainCamera: this.mainCamera,
             viewer: this.viewer,
             transformMatrix,
@@ -57,7 +58,22 @@ export class SceneManager {
         window.addEventListener('resize', () => this.onWindowResize());
     }
 
+    async fileExists(url) {
+        try {
+            const res = await fetch(url, { method: 'HEAD' });
+            return res.ok;
+        } catch {
+            return false;
+        }
+    }
+
     async loadGaussianScene() {
+        const exists = await this.fileExists(this.splatPath);
+        if (!exists) {
+            console.warn(`[SceneManager] 3DGS file not found: ${this.splatPath}`);
+            return null;
+        }
+        console.log("Splat exist");
         const viewer = new GaussianSplats3D.Viewer({
             selfDrivenMode: false,
             threeScene: this.scene,
@@ -75,9 +91,54 @@ export class SceneManager {
         return viewer;
     }
 
+    async loadMeshModel() {
+        const exists = await this.fileExists(this.meshPath);
+        if (!exists) {
+            console.warn(`[SceneManager] Mesh file not found: ${this.meshPath}`);
+            return;
+        }
+
+        const loader = new PLYLoader();
+        loader.load(this.meshPath, (geometry) => {
+            geometry.computeVertexNormals();
+
+            const material = new THREE.MeshStandardMaterial({
+                vertexColors: true,
+                flatShading: false,
+            });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.name = 'MeshModel';
+            mesh.visible = true;
+
+            this.scene.add(mesh);
+            this.meshModel = mesh;
+
+            const light = new THREE.DirectionalLight(0xffffff, 1);
+            light.position.set(0, 0, 3);
+            this.scene.add(light);
+            this.scene.add(new THREE.AmbientLight(0x404040));
+        });
+    }
+
+    setRenderMode(mode) {
+        if (mode === '3dgs') {
+            this.viewer?.setVisibility(true); // or however you hide/show splats
+            if (this.meshModel) this.meshModel.visible = false;
+        } else if (mode === 'mesh') {
+            this.viewer?.setVisibility(false);
+            if (this.meshModel) this.meshModel.visible = true;
+        }
+    }
+
+    setShowCameraHelper(show) {
+
+        if (!this.mainCamera || !this.scene) return;
+
+        this.cameraSwitcher.toggleColmapCameras();
+    }
+
     setupRenderer() {
-        this.renderer = new THREE.WebGLRenderer();
-        this.canvas.replaceWith(this.renderer.domElement);
+        this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
     }
 

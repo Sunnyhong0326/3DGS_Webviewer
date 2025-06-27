@@ -5,14 +5,13 @@ export async function runRenderLoop({
     scene,
     renderer,
     controls,
-    cameraSwitcher,
     mainCamera,
     viewer,
     transformMatrix,
     onCameraUpdate = null,
 }) {
     const movementThreshold = 0.001;     // ~1mm movement threshold
-    const waitTimeMs = 1000;             // 1s wait to confirm stillness
+    const waitTimeMs = 500;             // 1s wait to confirm stillness
 
     let lastMovingTime = 0;
     let lastPosition = new THREE.Vector3();
@@ -24,8 +23,8 @@ export async function runRenderLoop({
 
         controls.update();
         renderer.render(scene, mainCamera);
-        viewer.update();
-        viewer.render();
+        viewer?.update();
+        viewer?.render();
 
         if (!mainCamera || !transformMatrix) return;
 
@@ -54,16 +53,15 @@ export async function runRenderLoop({
             } catch (err) {
                 console.warn("GPS conversion failed", err);
             }
-            console.log("[DEBUG] GPS", lastGPS);
-            console.log("[DEBUG] COLMAP", currentPosition);
-            console.log("[DEBUG] ECEF", ecef);
         }
         
-        onCameraUpdate?.({
-            colmap: { x: currentPosition.x, y: currentPosition.y, z: currentPosition.z },
-            ecef: { x: ecef.x, y: ecef.y, z: ecef.z },
-            gps: { lat: lastGPS.lat, lon: lastGPS.lon, alt: lastGPS.alt },
-        });
+        if (distance > movementThreshold || shouldUpdateGPS) {
+            onCameraUpdate?.({
+                colmap: { x: currentPosition.x, y: currentPosition.y, z: currentPosition.z },
+                ecef: { x: ecef.x, y: ecef.y, z: ecef.z },
+                gps: { lat: lastGPS.lat, lon: lastGPS.lon, alt: lastGPS.alt },
+            });
+        }
     }
 
     loop();

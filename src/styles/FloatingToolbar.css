@@ -67,3 +67,38 @@
   width: 80%;
   align-self: center;
 }
+
+.model-toggle-container {
+  position: absolute;
+  top: 80px;
+  left: 20px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-family: Arial;
+}
+
+.model-toggle button {
+  background: none;
+  color: #ccc;
+  border: none;
+  padding: 6px 12px;
+  margin: 0;
+  cursor: pointer;
+  font-size: 13px;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+
+.model-toggle button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.model-toggle .active {
+  background: #4FC3F7;
+  color: black;
+  font-weight: bold;
+}

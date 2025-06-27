@@ -1,0 +1,29 @@
+.viewer-options-panel {
+  position: absolute;
+  top: 60px;
+  right: 20px;
+  background: rgba(30, 30, 30, 0.95);
+  color: #fff;
+  padding: 16px;
+  border-radius: 8px;
+  min-width: 200px;
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+.viewer-options-panel h4 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+.option-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.option-row label {
+  margin-right: 8px;
+  font-size: 14px;
+}

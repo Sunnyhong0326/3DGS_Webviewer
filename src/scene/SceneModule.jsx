@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { SceneManager } from './core/SceneManager';
 
-const SceneModule = ({ onToggleReady, onCamerasLoaded, onCameraInfoUpdate }) => {
+const SceneModule = ({renderMode, showCameraHelper, onCameraInfoUpdate }) => {
     const canvasRef = useRef(null);
     const sceneManagerRef = useRef(null);
 
@@ -9,23 +9,23 @@ const SceneModule = ({ onToggleReady, onCamerasLoaded, onCameraInfoUpdate }) => 
         const sceneManager = new SceneManager(canvasRef.current);
         sceneManagerRef.current = sceneManager;
 
-        if (onToggleReady) {
-            onToggleReady((state) => {
-                sceneManager.cameraSwitcher?.toggleColmapCameras(state);
-            });
-        }
-
         sceneManager.setCameraInfoCallback(onCameraInfoUpdate);
 
-        sceneManager.init().then(() => {
-            onCamerasLoaded?.();
-        });
+        sceneManager.init();
 
         return () => {
             sceneManagerRef.current?.dispose?.();
             sceneManagerRef.current = null;
         };
     }, []); 
+
+    useEffect(() => {
+        sceneManagerRef.current?.setRenderMode?.(renderMode);
+    }, [renderMode]);
+
+    useEffect(() => {
+        sceneManagerRef.current?.setShowCameraHelper?.(showCameraHelper);
+    }, [showCameraHelper]);
 
     return (
         <canvas
