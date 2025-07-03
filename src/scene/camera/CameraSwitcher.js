@@ -12,7 +12,7 @@ export default class CameraSwitcher {
 
         this.colmapCameras = [];
         this.colmapHelpers = [];
-        this.showColmapHelpers = true;
+        this.showColmapHelpers = false;
     }
 
     /**

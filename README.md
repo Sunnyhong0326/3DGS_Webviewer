@@ -14,6 +14,7 @@ If you are developing a production application, we recommend using TypeScript wi
 ## Development
 ```bash
 docker run --rm -it -p 3000:3000 -v "$PWD":/app -v /home/sunnyhong/data/results:/app/public/results gs_webviewer_dev bash
+```
 ```bash
 npm install
 npx vite dev --host --port=3000

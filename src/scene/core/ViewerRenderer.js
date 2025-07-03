@@ -24,7 +24,9 @@ export async function runRenderLoop({
         controls.update();
         renderer.render(scene, mainCamera);
         viewer?.update();
-        viewer?.render();
+        if (viewer?.splatMesh?.visible && viewer?.splatRenderReady) {
+            viewer?.render();
+        }
 
         if (!mainCamera || !transformMatrix) return;
 

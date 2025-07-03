@@ -1,31 +1,66 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { SceneManager } from './core/SceneManager';
 
-const SceneModule = ({renderMode, showCameraHelper, onCameraInfoUpdate }) => {
+const SceneModule = ({renderMode, currentMode, showBVH, showCameraHelper, showWireframe,  onCameraInfoUpdate }) => {
+    const [isReady, setIsReady] = useState(false);
     const canvasRef = useRef(null);
     const sceneManagerRef = useRef(null);
 
     useEffect(() => {
-        const sceneManager = new SceneManager(canvasRef.current);
-        sceneManagerRef.current = sceneManager;
+        if (canvasRef.current) {
+            const sceneManager = SceneManager.getInstance(canvasRef.current);
+            sceneManagerRef.current = sceneManager;
+            sceneManager.setCameraInfoCallback(onCameraInfoUpdate);
 
-        sceneManager.setCameraInfoCallback(onCameraInfoUpdate);
-
-        sceneManager.init();
+            sceneManager.init().then(() => {
+                setIsReady(true);
+            });
+        }
 
         return () => {
             sceneManagerRef.current?.dispose?.();
             sceneManagerRef.current = null;
         };
-    }, []); 
+    }, []);
 
     useEffect(() => {
+        const sceneManager = sceneManagerRef.current;
+        if (!isReady || !sceneManager ) return;
+
+        const shouldEnableRaycast = currentMode === 'measure' || currentMode === 'volume';
+
+        if (shouldEnableRaycast) {
+            sceneManager.registerClickHandler((hit) => {
+                console.log('[Raycast] Triangle hit:', hit.faceIndex);
+            });
+        } else {
+            sceneManager.unregisterClickHandler();
+        }
+
+        return () => {
+            sceneManager.unregisterClickHandler();
+        };
+    }, [currentMode, isReady]);
+
+    useEffect(() => {
+        if (!isReady) return;
         sceneManagerRef.current?.setRenderMode?.(renderMode);
-    }, [renderMode]);
+    }, [renderMode, isReady]);
 
     useEffect(() => {
+        if (!isReady) return;
         sceneManagerRef.current?.setShowCameraHelper?.(showCameraHelper);
-    }, [showCameraHelper]);
+    }, [showCameraHelper, isReady]);
+
+    useEffect(() => {
+        if (!isReady) return;
+        sceneManagerRef.current?.toggleBVHHelper?.(showBVH);
+    }, [showBVH, isReady]);
+
+    useEffect(() => {
+        if (!isReady) return;
+        sceneManagerRef.current?.setShowWireframe?.(showWireframe);
+    }, [showWireframe, isReady]);
 
     return (
         <canvas

@@ -1,4 +1,3 @@
-import React from 'react';
 import '../styles/FloatingToolbar.css';
 import {
   LucideRuler,
@@ -41,9 +40,6 @@ const FloatingToolbar = ({
         >
           <LucideSettings size={18} />
         </button>
-      </div>
-      <div className="model-toggle-container">
-        <span style={{ marginRight: 8, color: '#ccc' }}>Render Mode:</span>
       </div>
     </div>
   );

@@ -14,7 +14,15 @@ const App = () => {
   const [showSettings, setShowSettings] = useState(false);
   
   const [renderMode, setRenderMode] = useState('3dgs');
-  const [showCameraHelper, setShowCameraHelper] = useState(true);
+  const [showCameraHelper, setShowCameraHelper] = useState(false);
+  const [showBVH, setShowBVH] = useState(false);
+  const [showWireframe, setShowWireframe] = useState(false);
+
+  useEffect(() => {
+    if (renderMode !== 'mesh' && showBVH) {
+      setShowBVH(false);
+    }
+  }, [renderMode]);
 
   return (
     <>
@@ -30,13 +38,20 @@ const App = () => {
           renderMode={renderMode}
           onRenderModeChange={setRenderMode}
           showCameraHelper={showCameraHelper}
-          onToggleCameraHelper={() => setShowCameraHelper(h => !h)}
-        />
-      )}
+          onToggleCameraHelper={setShowCameraHelper}
+          showBVH={showBVH}
+          onToggleBVH={setShowBVH}
+          showWireframe={showWireframe}
+          onToggleWireFrame={setShowWireframe}
+          />
+        )}
 
       <SceneModule
         renderMode={renderMode}
+        currentMode={mode}
+        showBVH={showBVH}
         showCameraHelper={showCameraHelper}
+        showWireframe={showWireframe}
         onCameraInfoUpdate={({ colmap, ecef, gps }) => {
           setColmapPos({ x: colmap.x, y: colmap.y, z: colmap.z });
           setEcefPos({ x: ecef.x, y: ecef.y, z: ecef.z });
