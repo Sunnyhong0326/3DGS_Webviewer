@@ -27,6 +27,12 @@ export async function runRenderLoop({
         if (viewer?.splatMesh?.visible && viewer?.splatRenderReady) {
             viewer?.render();
         }
+        
+        // if (measureTool.textSprite) {
+        //     const cameraDistance = measureTool.textSprite.position.distanceTo(mainCamera.position);
+        //     const scaleFactor = cameraDistance * 0.05; // tweak this factor
+        //     measureTool.textSprite.scale.copy(measureTool.textSprite.userData.baseScale).multiplyScalar(scaleFactor);
+        // }
 
         if (!mainCamera || !transformMatrix) return;
 

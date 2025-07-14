@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import CameraSwitcher from '../camera/CameraSwitcher.js';
 import { loadColmapCameras } from '../camera/ColmapCameraLoader.js';
 import { loadTransformMatrix } from '../camera/TransformMatrixLoader.js';
+import { MeasureTool } from '../measure/MeasureTool.js';
 import { runRenderLoop } from './ViewerRenderer.js';
 import { getQueryParam } from '../../utils/queryParam.js';
 import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d';
@@ -33,8 +34,9 @@ export class SceneManager {
     constructor(canvas) {
         this.canvas = canvas;
         this.sceneId = getQueryParam(new URLSearchParams(window.location.search), 'scene_id', '');
-
+        
         this.scene = new THREE.Scene();
+
         this.mainCamera = null;
         this.renderer = null;
         this.controls = null;
@@ -68,11 +70,12 @@ export class SceneManager {
         this.setupControls();
 
         this.cameraSwitcher = new CameraSwitcher(this.scene, this.renderer, this.mainCamera, this.controls);
+        this.measureTool = new MeasureTool(this.scene);
         await loadColmapCameras(this.colmapPath, this.scene, this.cameraSwitcher);
         this.viewer = await this.loadGaussianScene();
         await this.loadMeshModel();
 
-        const transformMatrix = await loadTransformMatrix(this.transformPath);
+        this.transformMatrix = await loadTransformMatrix(this.transformPath);
 
         await runRenderLoop({
             scene: this.scene,
@@ -80,7 +83,7 @@ export class SceneManager {
             controls: this.controls,
             mainCamera: this.mainCamera,
             viewer: this.viewer,
-            transformMatrix,
+            transformMatrix: this.transformMatrix,
             onCameraUpdate: this.cameraInfoCallback,
         });
 
@@ -147,7 +150,6 @@ export class SceneManager {
             const material = new THREE.MeshStandardMaterial({
                 vertexColors: true,
                 flatShading: false,
-                wireframe: false, // initially off
             });
 
             const mesh = new THREE.Mesh(geometry, material);
@@ -157,9 +159,24 @@ export class SceneManager {
             this.scene.add(mesh);
             this.meshModel = mesh;
 
-            const light = new THREE.DirectionalLight(0xffffff, 3);
-            light.position.set(0,0,3);
-            this.scene.add(light);
+            const lightTop = new THREE.DirectionalLight(0xffffff, 3);
+            const lightRight = new THREE.DirectionalLight(0xffffff, 1);
+            const lightLeft= new THREE.DirectionalLight(0xffffff, 1);
+            const lightUp= new THREE.DirectionalLight(0xffffff, 1);
+            const lightDown= new THREE.DirectionalLight(0xffffff, 1);
+
+            lightTop.position.set(0,0,3);
+            lightRight.position.set(3,0,0);
+            lightLeft.position.set(-3,0,0);
+            lightUp.position.set(0,3,0);
+            lightDown.position.set(0,-3,0);
+
+            this.scene.add(lightTop);
+            this.scene.add(lightRight);
+            this.scene.add(lightLeft);
+            this.scene.add(lightUp);
+            this.scene.add(lightDown);
+
             this.scene.add(new THREE.AmbientLight(0x404040));
             
             console.log('[MeshModel] Geometry loaded:', geometry);
@@ -178,6 +195,7 @@ export class SceneManager {
             return;
         }
         console.log("Register Click");
+
         const handleClick = (event) => {
             if (!this.meshModel) {
                 console.warn('[Raycast] Mesh model not loaded yet. Click ignored.');
@@ -187,6 +205,7 @@ export class SceneManager {
                 console.log('[Raycast] Skipping click during OrbitControls drag');
                 return;
             }
+
             const rect = domElement.getBoundingClientRect();
             this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
             this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -196,29 +215,16 @@ export class SceneManager {
 
             if (intersects.length > 0) {
                 const hit = intersects[0];
-                const geom = hit.object.geometry;
+                const hitPoint = hit.point;
 
-                if (!geom.index || !geom.attributes.color) return;
+                this.measureTool.addPoint(hitPoint, this.transformMatrix);
 
-                const colorAttr = geom.attributes.color;
-                const faceIdx = hit.faceIndex;
-                const idxAttr = geom.index;
+                console.log(`[Raycast] Placed marker at`, hitPoint);
 
-                const i0 = idxAttr.getX(faceIdx * 3);
-                const i1 = idxAttr.getX(faceIdx * 3 + 1);
-                const i2 = idxAttr.getX(faceIdx * 3 + 2);
-
-                [i0, i1, i2].forEach((i) => {
-                    colorAttr.setX(i, 1);
-                    colorAttr.setY(i, 0);
-                    colorAttr.setZ(i, 0);
-                });
-
-                colorAttr.needsUpdate = true;
-                console.log(`[Raycast] Marked triangle ${faceIdx} red.`);
                 if (onHitCallback) onHitCallback(hit);
             }
         };
+
         this._clickHandler = handleClick;
         domElement.addEventListener('click', this._clickHandler);
     }

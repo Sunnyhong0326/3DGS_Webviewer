@@ -11,7 +11,6 @@ const modes = [
   { id: 'view', label: 'View', icon: <LucideEye size={18} /> },
   { id: 'measure', label: 'Measure', icon: <LucideRuler size={18} /> },
   { id: 'volume', label: 'Volume', icon: <LucideCuboid size={18} /> },
-  { id: 'camera', label: 'Camera', icon: <LucideCamera size={18} /> },
 ];
 
 const FloatingToolbar = ({
