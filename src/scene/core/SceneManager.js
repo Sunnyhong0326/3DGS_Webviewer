@@ -4,6 +4,8 @@ import CameraSwitcher from '../camera/CameraSwitcher.js';
 import { loadColmapCameras } from '../camera/ColmapCameraLoader.js';
 import { loadTransformMatrix } from '../camera/TransformMatrixLoader.js';
 import { MeasureTool } from '../measure/MeasureTool.js';
+import { LassoSelection, BoxSelection } from '../selection/Selection';
+import { computeSelectedTriangles } from '../selection/computeSelectedTriangles';
 import { runRenderLoop } from './ViewerRenderer.js';
 import { getQueryParam } from '../../utils/queryParam.js';
 import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d';
@@ -151,13 +153,25 @@ export class SceneManager {
                 vertexColors: true,
                 flatShading: false,
             });
-
             const mesh = new THREE.Mesh(geometry, material);
             mesh.name = 'MeshModel';
             mesh.visible = this.currentRenderMode === 'mesh';
-
+            
             this.scene.add(mesh);
             this.meshModel = mesh;
+
+            this.highlightMesh = new THREE.Mesh(
+                this.meshModel.geometry.clone(),
+                new THREE.MeshBasicMaterial({
+                    color: 0xff9800,
+                    opacity: 0.25,
+                    transparent: true,
+                    depthWrite: false,
+                })
+            );
+            this.highlightMesh.geometry.drawRange.count = 0;
+            this.highlightMesh.visible = false;
+            this.scene.add(this.highlightMesh);
 
             const lightTop = new THREE.DirectionalLight(0xffffff, 3);
             const lightRight = new THREE.DirectionalLight(0xffffff, 1);
@@ -241,12 +255,148 @@ export class SceneManager {
     dispose() {
         console.log("called dispose");
         if (this.canvas && this._clickHandler) {
+            this.disableSelection();
             this.canvas.removeEventListener('click', this._clickHandler);
             this._clickHandler = null;
             console.log("dispose click handler");
         }
     }
 
+    enableSelection(selectionType) {
+        console.log("selection type", selectionType);
+        if (!this.meshModel || selectionType == null) return;
+
+        console.log("Enable Selection");
+        this.selectionTool = selectionType === 'box' ? new BoxSelection() : new LassoSelection();
+        
+        this.selectionShape = new THREE.Line(
+            new THREE.BufferGeometry(),
+            new THREE.LineBasicMaterial({ color: 0xff9800, depthTest: false })
+        );
+        this.selectionShape.renderOrder = 999;
+        this.selectionShape.visible = false;
+        this.scene.add(this.selectionShape);
+
+        this.highlightMesh.visible = true;
+
+        const domElement = this.canvas;
+
+        this._onPointerDown = (e) => {
+            this.selectionTool.handlePointerDown(e);
+        };
+
+        this._onPointerMove = (e) => {
+            if ((e.buttons & 1) === 0) return;
+            const { changed } = this.selectionTool.handlePointerMove(e);
+            if (changed) {
+                this.selectionShape.visible = true;
+                this.updateSelectionShape();
+            }
+        };
+
+        this._onPointerUp = (e) => {
+            this.selectionTool.handlePointerUp(e);
+            this.selectionShape.visible = false;
+
+            if (this.selectionTool.points.length) {
+                this.updateSelectionResult();
+            }
+        };
+
+        domElement.addEventListener('pointerdown', this._onPointerDown);
+        domElement.addEventListener('pointermove', this._onPointerMove);
+        domElement.addEventListener('pointerup', this._onPointerUp);
+        this.controls.enabled = false;
+    }
+
+    disableSelection() {
+        console.log("Disable Selection");
+        const domElement = this.canvas;
+
+        if (this._onPointerDown) {
+            domElement.removeEventListener('pointerdown', this._onPointerDown);
+            this._onPointerDown = null;
+        }
+        if (this._onPointerMove) {
+            domElement.removeEventListener('pointermove', this._onPointerMove);
+            this._onPointerMove = null;
+        }
+        if (this._onPointerUp) {
+            domElement.removeEventListener('pointerup', this._onPointerUp);
+            this._onPointerUp = null;
+        }
+        if (this.selectionShape) {
+            this.scene.remove(this.selectionShape);
+            this.selectionShape.geometry.dispose();
+        }
+
+        // if (this.highlightMesh)
+        //     this.highlightMesh.visible = false;
+
+        // if (this.highlightMesh) {
+        //     this.scene.remove(this.highlightMesh);
+        //     this.highlightMesh.geometry.dispose();
+        //     this.highlightMesh.material.dispose();
+        //     this.highlightMesh = null;
+        // }
+
+        this.selectionTool = null;
+        this.controls.enabled = true;
+    }
+
+    updateSelectionShape() {
+        if (!this.selectionTool || !this.selectionShape) return;
+
+        const pointsNDC = this.selectionTool.points;
+
+        const worldPoints = [];
+
+        for (let i = 0; i < pointsNDC.length; i += 3) {
+            const ndc = new THREE.Vector3(
+                pointsNDC[i],
+                pointsNDC[i + 1],
+                0 
+            );
+            ndc.unproject(this.mainCamera);
+            worldPoints.push(ndc.x, ndc.y, ndc.z);
+        }
+
+        const closedLoop = [
+            ...worldPoints,
+            ...worldPoints.slice(0, 3)
+        ];
+
+        this.selectionShape.geometry.setAttribute(
+            'position',
+            new THREE.Float32BufferAttribute(closedLoop, 3)
+        );
+        this.selectionShape.geometry.setDrawRange(0, closedLoop.length / 3);
+        this.selectionShape.geometry.attributes.position.needsUpdate = true;
+    }
+
+    updateSelectionResult() {
+        if (!this.selectionTool || !this.meshModel || !this.highlightMesh) return;
+
+        const indices = computeSelectedTriangles(this.meshModel, this.mainCamera, this.selectionTool, {
+            toolMode: 'lasso',
+            selectionMode: 'intersection',
+            useBoundsTree: true,
+            selectWholeModel: false,
+        });
+
+        const srcIndex = this.meshModel.geometry.index;
+        const destIndex = this.highlightMesh.geometry.index;
+
+        for (let i = 0; i < indices.length; i++) {
+            destIndex.setX(i, srcIndex.getX(indices[i]));
+        }
+
+        this.highlightMesh.geometry.drawRange.count = indices.length;
+        destIndex.needsUpdate = true;
+    }
+
+
+    
     setShowWireframe(show) {
         if (this.meshModel && this.meshModel.material) {
             if (!this.meshModel) return;

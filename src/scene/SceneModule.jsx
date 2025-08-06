@@ -1,7 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { SceneManager } from './core/SceneManager';
+import { LassoSelection, BoxSelection } from './selection/Selection';
 
-const SceneModule = ({renderMode, currentMode, showBVH, showCameraHelper, showWireframe,  onCameraInfoUpdate }) => {
+const SceneModule = (
+    {
+        renderMode, currentMode, selectionMode, 
+        showBVH, showCameraHelper, 
+        showWireframe, onCameraInfoUpdate 
+    }) => {
     const [isReady, setIsReady] = useState(false);
     const canvasRef = useRef(null);
     const sceneManagerRef = useRef(null);
@@ -27,7 +33,7 @@ const SceneModule = ({renderMode, currentMode, showBVH, showCameraHelper, showWi
         const sceneManager = sceneManagerRef.current;
         if (!isReady || !sceneManager ) return;
 
-        const shouldEnableRaycast = currentMode === 'measure' || currentMode === 'volume';
+        const shouldEnableRaycast = currentMode === 'measure';
 
         if (shouldEnableRaycast) {
             sceneManager.registerClickHandler((hit) => {
@@ -37,10 +43,17 @@ const SceneModule = ({renderMode, currentMode, showBVH, showCameraHelper, showWi
             sceneManager.unregisterClickHandler();
         }
 
+        if (currentMode === 'volume' && selectionMode != null) {
+            sceneManager.enableSelection(selectionMode);
+        } else {
+            sceneManager.disableSelection();
+        }
+
         return () => {
             sceneManager.unregisterClickHandler();
+            sceneManager.disableSelection(); 
         };
-    }, [currentMode, isReady]);
+    }, [currentMode, selectionMode, isReady]);
 
     useEffect(() => {
         if (!isReady) return;

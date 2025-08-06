@@ -13,7 +13,7 @@
   position: relative;
 }
 
-/* Floating toolbar */
+
 .floating-toolbar {
   position: absolute;
   top: 50%;
@@ -26,25 +26,56 @@
   padding: 8px;
   box-shadow: 0 0 10px rgba(0, 0, 0, 0.4);
   z-index: 100;
+  gap: 8px;
 }
+
+.selection-toolbar {
+  position: absolute;
+  bottom: 24px; /* distance from bottom of screen */
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: row; /* horizontal buttons */
+  background-color: #1e1e1e;
+  border-radius: 12px;
+  padding: 8px 12px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  gap: 8px; /* space between buttons */
+}
+
 
 /* Buttons inside toolbar */
 .toolbar-btn {
   background: none;
   border: none;
-  color: #ccc;
+  color: #ffffff;
   padding: 10px;
   font-size: 18px;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: outline, background-color 0.2s;
+  border-radius: 6px;
 }
 
-.toolbar-btn.active,
+.toolbar-btn:focus {
+  outline: none;
+}
+
 .toolbar-btn:hover {
+  outline: 2px solid rgba(255, 255, 255, 0.6);
+}
+
+/* Active buttons (e.g., selected selectionMode) */
+.toolbar-btn.active {
+  background-color: rgba(255, 255, 255, 0.178);
+  outline: 2px solid #ffffff;
+}
+
+/* .toolbar-btn:hover {
   background-color: #333;
   color: white;
   border-radius: 8px;
-}
+} */
 
 /* Checkbox toggle area */
 .toolbar-toggle {

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 
 const CameraInfoPanel = ({ colmap, ecef, gps }) => {
     return (
