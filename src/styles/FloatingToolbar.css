@@ -13,12 +13,6 @@
   position: relative;
 }
 
-/* Floating toolbar */
-.floating-toolbar-container {
-  position: absolute;
-  top: 0;
-  left: 0;
-}
 
 .floating-toolbar {
   position: absolute;

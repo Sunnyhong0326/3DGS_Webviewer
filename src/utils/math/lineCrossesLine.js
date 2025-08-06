@@ -1,15 +1,25 @@
+/**
+ * Check if two line segments intersect.
+ *
+ * Source: https://stackoverflow.com/questions/3838329/how-can-i-check-if-two-segments-intersect
+ * @param {THREE.Line3} l1
+ * @param {THREE.Line3} l2
+ * @returns {boolean}
+ */
+export function lineCrossesLine( l1, l2 ) {
 
-export function lineCrossesLine(lineA, lineB) {
-    const a = lineA.start;
-    const b = lineA.end;
-    const c = lineB.start;
-    const d = lineB.end;
+	function ccw( A, B, C ) {
 
-    const denom = (d.y - c.y) * (b.x - a.x) - (d.x - c.x) * (b.y - a.y);
-    if (denom === 0) return false;
+		return ( C.y - A.y ) * ( B.x - A.x ) > ( B.y - A.y ) * ( C.x - A.x );
 
-    const ua = ((d.x - c.x) * (a.y - c.y) - (d.y - c.y) * (a.x - c.x)) / denom;
-    const ub = ((b.x - a.x) * (a.y - c.y) - (b.y - a.y) * (a.x - c.x)) / denom;
+	}
 
-    return ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1;
+	const A = l1.start;
+	const B = l1.end;
+
+	const C = l2.start;
+	const D = l2.end;
+
+	return ccw( A, C, D ) !== ccw( B, C, D ) && ccw( A, B, C ) !== ccw( A, B, D );
+
 }
