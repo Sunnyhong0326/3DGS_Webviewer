@@ -11,6 +11,7 @@ const App = () => {
   const [gpsCoords, setGpsCoords] = useState(null);
 
   const [mode, setMode] = useState('view');
+  const [selectionMode, setSelectionMode] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   
   const [renderMode, setRenderMode] = useState('3dgs');
@@ -24,12 +25,23 @@ const App = () => {
     }
   }, [renderMode]);
 
+  const handleModeChange = (newMode) => {
+    setMode(newMode);
+    if (newMode === 'volume') {
+      setSelectionMode('lasso');
+    } else {
+      setSelectionMode(null);
+    }
+  };
+
   return (
     <>
       <StatsPanel />
       <FloatingToolbar
         currentMode={mode}
-        onModeChange={setMode}
+        selectionMode={selectionMode}
+        onModeChange={handleModeChange}
+        onSelectionModeChange={setSelectionMode}
         onToggleSettings={() => setShowSettings(prev => !prev)}
       />
       
@@ -49,6 +61,7 @@ const App = () => {
       <SceneModule
         renderMode={renderMode}
         currentMode={mode}
+        selectionMode={selectionMode}
         showBVH={showBVH}
         showCameraHelper={showCameraHelper}
         showWireframe={showWireframe}

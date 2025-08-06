@@ -4,6 +4,8 @@ import CameraSwitcher from '../camera/CameraSwitcher.js';
 import { loadColmapCameras } from '../camera/ColmapCameraLoader.js';
 import { loadTransformMatrix } from '../camera/TransformMatrixLoader.js';
 import { MeasureTool } from '../measure/MeasureTool.js';
+import { LassoTool } from '../selection/LassoTool.js';
+import { BoxTool } from '../selection/BoxTool.js';
 import { runRenderLoop } from './ViewerRenderer.js';
 import { getQueryParam } from '../../utils/queryParam.js';
 import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d';
@@ -55,10 +57,25 @@ export class SceneManager {
 
         this.meshModel = null;
         this.bvhHelper = null;
+        this.lassoTool = null;
+        this.boxTool = null;
+        this.lassoCanvas = null;
 
         this.currentRenderMode = '3dgs';
         this._initialized = false;
         this.isDragging = false;
+    }
+
+    setLassoCanvas(canvas) {
+        this.lassoCanvas = canvas;
+        if (this.renderer && this.mainCamera) {
+            this.lassoTool = new LassoTool(this.scene, this.mainCamera, this.renderer.domElement, canvas);
+            this.boxTool = new BoxTool(this.scene, this.mainCamera, this.renderer.domElement, canvas);
+            if (this.meshModel) {
+                this.lassoTool.setMesh(this.meshModel);
+                this.boxTool.setMesh(this.meshModel);
+            }
+        }
     }
 
     async init() {
@@ -68,6 +85,15 @@ export class SceneManager {
         this.setupRenderer();
         this.setupCamera();
         this.setupControls();
+
+        if (this.lassoCanvas) {
+            this.lassoTool = new LassoTool(this.scene, this.mainCamera, this.renderer.domElement, this.lassoCanvas);
+            this.boxTool = new BoxTool(this.scene, this.mainCamera, this.renderer.domElement, this.lassoCanvas);
+            if (this.meshModel) {
+                this.lassoTool.setMesh(this.meshModel);
+                this.boxTool.setMesh(this.meshModel);
+            }
+        }
 
         this.cameraSwitcher = new CameraSwitcher(this.scene, this.renderer, this.mainCamera, this.controls);
         this.measureTool = new MeasureTool(this.scene);
@@ -158,6 +184,8 @@ export class SceneManager {
 
             this.scene.add(mesh);
             this.meshModel = mesh;
+            if (this.lassoTool) this.lassoTool.setMesh(mesh);
+            if (this.boxTool) this.boxTool.setMesh(mesh);
 
             const lightTop = new THREE.DirectionalLight(0xffffff, 3);
             const lightRight = new THREE.DirectionalLight(0xffffff, 1);
@@ -245,6 +273,28 @@ export class SceneManager {
             this._clickHandler = null;
             console.log("dispose click handler");
         }
+    }
+
+    enableLassoMode(enable) {
+        if (!this.lassoTool) return;
+        if (enable) {
+            this.boxTool?.deactivate();
+            this.lassoTool.activate();
+        } else {
+            this.lassoTool.deactivate();
+        }
+        if (this.controls) this.controls.enabled = !enable;
+    }
+
+    enableBoxMode(enable) {
+        if (!this.boxTool) return;
+        if (enable) {
+            this.lassoTool?.deactivate();
+            this.boxTool.activate();
+        } else {
+            this.boxTool.deactivate();
+        }
+        if (this.controls) this.controls.enabled = !enable;
     }
 
     setShowWireframe(show) {

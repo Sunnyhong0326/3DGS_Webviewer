@@ -3,8 +3,9 @@ import {
   LucideRuler,
   LucideCuboid,
   LucideEye,
-  LucideCamera,
   LucideSettings,
+  LucideLasso,
+  LucideSquare,
 } from 'lucide-react';
 
 const modes = [
@@ -13,9 +14,16 @@ const modes = [
   { id: 'volume', label: 'Volume', icon: <LucideCuboid size={18} /> },
 ];
 
+const selectionModes = [
+  { id: 'lasso', label: 'Lasso', icon: <LucideLasso size={18} /> },
+  { id: 'box', label: 'Box', icon: <LucideSquare size={18} /> },
+];
+
 const FloatingToolbar = ({
   currentMode,
+  selectionMode,
   onModeChange,
+  onSelectionModeChange,
   onToggleSettings
 }) => {
   return (
@@ -29,17 +37,31 @@ const FloatingToolbar = ({
             title={mode.label}
           >
             {mode.icon}
-          </button>
-        ))}
-        <hr className="toolbar-separator" />
-        <button
-          className="toolbar-btn"
-          onClick={onToggleSettings}
-          title="Settings"
-        >
-          <LucideSettings size={18} />
         </button>
+      ))}
+      <hr className="toolbar-separator" />
+      <button
+        className="toolbar-btn"
+        onClick={onToggleSettings}
+        title="Settings"
+      >
+        <LucideSettings size={18} />
+      </button>
       </div>
+      {currentMode === 'volume' && (
+        <div className="selection-toolbar">
+          {selectionModes.map((mode) => (
+            <button
+              key={mode.id}
+              className={`toolbar-btn ${selectionMode === mode.id ? 'active' : ''}`}
+              onClick={() => onSelectionModeChange(mode.id)}
+              title={mode.label}
+            >
+              {mode.icon}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

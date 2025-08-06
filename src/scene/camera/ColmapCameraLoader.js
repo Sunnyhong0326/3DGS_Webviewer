@@ -11,8 +11,7 @@ export async function loadColmapCameras(colmapPath, scene, cameraSwitcher) {
     offset += 8;
 
     for (let i = 0; i < numRegImages; i++) {
-        const imageId = dataView.getInt32(offset, true);
-        offset += 4;
+        offset += 4; // skip imageId
 
         const qvec = new THREE.Quaternion(
             dataView.getFloat64(offset + 8, true),
@@ -29,15 +28,12 @@ export async function loadColmapCameras(colmapPath, scene, cameraSwitcher) {
         );
         offset += 24;
 
-        const cameraId = dataView.getInt32(offset, true);
-        offset += 4;
+        offset += 4; // skip cameraId
         
-        let imageName = '';
         while (true) {
             const charCode = dataView.getInt8(offset);
-            offset ++;
+            offset++;
             if (charCode === 0) break;
-            imageName += String.fromCharCode(charCode);
         }
 
         const numPoints2D = Number(dataView.getBigUint64(offset, true));
