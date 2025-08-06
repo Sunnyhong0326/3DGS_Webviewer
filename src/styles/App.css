@@ -40,3 +40,12 @@
 .read-the-docs {
   color: #888;
 }
+.top-bar-container {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  z-index: 1000;
+}

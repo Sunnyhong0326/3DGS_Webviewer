@@ -27,12 +27,13 @@ const App = () => {
   return (
     <>
       <StatsPanel />
+      <div className="top-bar-container">
       <FloatingToolbar
         currentMode={mode}
         onModeChange={setMode}
         onToggleSettings={() => setShowSettings(prev => !prev)}
       />
-      
+
       {showSettings && (
         <ViewerOptionsPanel
           renderMode={renderMode}
@@ -41,10 +42,11 @@ const App = () => {
           onToggleCameraHelper={setShowCameraHelper}
           showBVH={showBVH}
           onToggleBVH={setShowBVH}
-          showWireframe={showWireframe}
+          showWireFrame={showWireframe}
           onToggleWireFrame={setShowWireframe}
-          />
-        )}
+        />
+      )}
+    </div>
 
       <SceneModule
         renderMode={renderMode}
