@@ -27,9 +27,7 @@ const App = () => {
 
   const handleModeChange = (newMode) => {
     setMode(newMode);
-    if (newMode === 'volume') {
-      setSelectionMode('lasso');
-    } else {
+    if (newMode !== 'volume') {
       setSelectionMode(null);
     }
   };

@@ -1,18 +1,22 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { SceneManager } from './core/SceneManager';
+import { LassoSelection, BoxSelection } from './selection/Selection';
 
-const SceneModule = ({renderMode, currentMode, selectionMode, showBVH, showCameraHelper, showWireframe,  onCameraInfoUpdate }) => {
+const SceneModule = (
+    {
+        renderMode, currentMode, selectionMode, 
+        showBVH, showCameraHelper, 
+        showWireframe, onCameraInfoUpdate 
+    }) => {
     const [isReady, setIsReady] = useState(false);
     const canvasRef = useRef(null);
-    const lassoCanvasRef = useRef(null);
     const sceneManagerRef = useRef(null);
 
     useEffect(() => {
-        if (canvasRef.current && lassoCanvasRef.current) {
+        if (canvasRef.current) {
             const sceneManager = SceneManager.getInstance(canvasRef.current);
             sceneManagerRef.current = sceneManager;
             sceneManager.setCameraInfoCallback(onCameraInfoUpdate);
-            sceneManager.setLassoCanvas(lassoCanvasRef.current);
 
             sceneManager.init().then(() => {
                 setIsReady(true);
@@ -29,7 +33,7 @@ const SceneModule = ({renderMode, currentMode, selectionMode, showBVH, showCamer
         const sceneManager = sceneManagerRef.current;
         if (!isReady || !sceneManager ) return;
 
-        const shouldEnableRaycast = currentMode === 'measure' || currentMode === 'volume';
+        const shouldEnableRaycast = currentMode === 'measure';
 
         if (shouldEnableRaycast) {
             sceneManager.registerClickHandler((hit) => {
@@ -39,16 +43,17 @@ const SceneModule = ({renderMode, currentMode, selectionMode, showBVH, showCamer
             sceneManager.unregisterClickHandler();
         }
 
+        if (currentMode === 'volume' && selectionMode != null) {
+            sceneManager.enableSelection(selectionMode);
+        } else {
+            sceneManager.disableSelection();
+        }
+
         return () => {
             sceneManager.unregisterClickHandler();
+            sceneManager.disableSelection(); 
         };
-    }, [currentMode, isReady]);
-
-    useEffect(() => {
-        if (!isReady) return;
-        sceneManagerRef.current?.enableLassoMode?.(selectionMode === 'lasso');
-        sceneManagerRef.current?.enableBoxMode?.(selectionMode === 'box');
-    }, [selectionMode, isReady]);
+    }, [currentMode, selectionMode, isReady]);
 
     useEffect(() => {
         if (!isReady) return;
@@ -70,31 +75,12 @@ const SceneModule = ({renderMode, currentMode, selectionMode, showBVH, showCamer
         sceneManagerRef.current?.setShowWireframe?.(showWireframe);
     }, [showWireframe, isReady]);
 
-    useEffect(() => {
-        const canvas = lassoCanvasRef.current;
-        if (!canvas) return;
-        const handleResize = () => {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        };
-        handleResize();
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, []);
-
     return (
-        <div style={{ position: 'relative' }}>
-            <canvas
-                ref={canvasRef}
-                id="viewer-canvas"
-                style={{ width: '100vw', height: '100vh', display: 'block' }}
-            />
-            <canvas
-                ref={lassoCanvasRef}
-                id="lasso-canvas"
-                style={{ position: 'absolute', top: 0, left: 0, width: '100vw', height: '100vh', pointerEvents: 'none' }}
-            />
-        </div>
+        <canvas
+            ref={canvasRef}
+            id="viewer-canvas"
+            style={{ width: '100vw', height: '100vh', display: 'block' }}
+        />
     );
 };
 

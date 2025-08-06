@@ -54,7 +54,7 @@ const FloatingToolbar = ({
             <button
               key={mode.id}
               className={`toolbar-btn ${selectionMode === mode.id ? 'active' : ''}`}
-              onClick={() => onSelectionModeChange(mode.id)}
+              onClick={() => onSelectionModeChange(selectionMode === mode.id ? null : mode.id)}
               title={mode.label}
             >
               {mode.icon}
