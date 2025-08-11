@@ -1,15 +1,17 @@
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import CameraSwitcher from '../camera/CameraSwitcher.js';
 import { loadColmapCameras } from '../camera/ColmapCameraLoader.js';
 import { loadTransformMatrix } from '../camera/TransformMatrixLoader.js';
 import { MeasureTool } from '../measure/MeasureTool.js';
 import { LassoSelection, BoxSelection } from '../selection/Selection';
 import { computeSelectedTriangles } from '../selection/computeSelectedTriangles';
+import { computeBoxSelectedTriangles } from '../selection/computeBoxSelectedTriangles.js';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
+import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import { runRenderLoop } from './ViewerRenderer.js';
 import { getQueryParam } from '../../utils/queryParam.js';
 import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d';
-import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import {
     MeshBVHHelper,
     computeBoundsTree,
@@ -20,6 +22,28 @@ import {
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
+
+// Reuse temps to avoid GC
+const _boxToMesh = new THREE.Matrix4();
+const _boxLocal  = new THREE.Box3();
+
+function fastBoxHitsMesh(mesh, boxMesh) {
+  // keep matrices fresh
+  mesh.updateMatrixWorld(true);
+  boxMesh.updateMatrixWorld(true);
+
+  // 1) Actual local AABB of the selection box (works for non-unit BoxGeometry too)
+  const g = boxMesh.geometry;
+  if (!g.boundingBox) g.computeBoundingBox();
+  _boxLocal.copy(g.boundingBox);
+
+  // 2) Transform from box local -> mesh local  (mesh^-1 * box)
+  _boxToMesh.copy(mesh.matrixWorld).invert().multiply(boxMesh.matrixWorld);
+
+  // 3) Ask BVH for a cheap boolean
+  return mesh.geometry.boundsTree.intersectsBox(_boxLocal, _boxToMesh);
+}
+
 
 export class SceneManager {
     static _instance = null;
@@ -57,6 +81,9 @@ export class SceneManager {
 
         this.meshModel = null;
         this.bvhHelper = null;
+
+        this.selectionBox = null;
+        this.transformControls = null;
 
         this.currentRenderMode = '3dgs';
         this._initialized = false;
@@ -267,12 +294,84 @@ export class SceneManager {
         if (!this.meshModel || selectionType == null) return;
 
         console.log("Enable Selection");
+
+        if (selectionType === 'box3d') {
+            this.selectionBox = new THREE.Mesh(
+                new THREE.BoxGeometry(1, 1, 1),
+                new THREE.MeshBasicMaterial({ color: 0xff9800, wireframe: true })
+            );
+            this.scene.add(this.selectionBox);
+
+            this.transformControls = new TransformControls(this.mainCamera, this.renderer.domElement);
+            this.transformControls.attach(this.selectionBox);
+
+            // orbit vs gizmo
+            this.transformControls.addEventListener('dragging-changed', (e) => {
+                this.controls.enabled = !e.value;
+                // while dragging, hide highlight (we’ll recompute on release)
+                if (e.value && this.highlightMesh) this.highlightMesh.visible = false;
+            });
+
+            // FAST preview during drag: tint box if anything will be selected
+            let rafPending = false;
+            this._onTCChange = () => {
+                if (rafPending) return;
+                rafPending = true;
+                requestAnimationFrame(() => {
+                    const hit = fastBoxHitsMesh(this.meshModel, this.selectionBox);
+                    // optional visual feedback
+                    this.selectionBox.material.color.setHex(hit ? 0xff4081 : 0xff9800);
+                    rafPending = false;
+                });
+            };
+            this.transformControls.addEventListener('change', this._onTCChange);
+
+            // PRECISE selection once the user finishes dragging
+            this._onTCMouseUp = () => {
+                this.updateBoxSelectionResult();
+                // reset tint after finalize
+                this.selectionBox.material.color.setHex(0xff9800);
+            };
+            this.transformControls.addEventListener('mouseUp', this._onTCMouseUp);
+
+            this._onKeyDown = (event) => {
+                switch ( event.key ) {
+                    case 'w':
+                        this.transformControls.setMode('translate');
+                        break;
+                    case 'e':
+                        this.transformControls.setMode('rotate');
+                        break;
+                    case 'r':
+                        this.transformControls.setMode('scale');
+                        break;
+                    case 'Escape':
+                        this.transformControls.reset();
+                        break;
+
+                }
+            }
+            window.addEventListener('keydown', this._onKeyDown);
+            
+            // Add gizmo helper to scene (not the control itself)
+            this.transformGizmo = this.transformControls.getHelper();
+            this.scene.add(this.transformGizmo);
+
+            // initial compute (optional)
+            this.highlightMesh.visible = true;
+            this.updateBoxSelectionResult();
+
+            return;
+        }
+
+
         this.selectionTool = selectionType === 'box' ? new BoxSelection() : new LassoSelection();
         
         this.selectionShape = new THREE.Line(
             new THREE.BufferGeometry(),
             new THREE.LineBasicMaterial({ color: 0xff9800, depthTest: false })
         );
+
         this.selectionShape.renderOrder = 999;
         this.selectionShape.visible = false;
         this.scene.add(this.selectionShape);
@@ -325,20 +424,33 @@ export class SceneManager {
             domElement.removeEventListener('pointerup', this._onPointerUp);
             this._onPointerUp = null;
         }
+        if (this._onTCChange) {
+            domElement.removeEventListener('change', this._onTCChange);
+            this._onTCChange = null;
+        }
+        if (this._onTCMouseUp) {
+            domElement.removeEventListener('mouseUp', this._onTCMouseUp);
+            this._onTCMouseUp = null;
+        }
+        if (this._onKeyDown) {
+            window.removeEventListener( 'keydown', this._onKeyDown);;
+            this._onKeyUp = null;
+        }
         if (this.selectionShape) {
             this.scene.remove(this.selectionShape);
             this.selectionShape.geometry.dispose();
         }
-
-        // if (this.highlightMesh)
-        //     this.highlightMesh.visible = false;
-
-        // if (this.highlightMesh) {
-        //     this.scene.remove(this.highlightMesh);
-        //     this.highlightMesh.geometry.dispose();
-        //     this.highlightMesh.material.dispose();
-        //     this.highlightMesh = null;
-        // }
+        if (this.transformControls) {
+            this.scene.remove(this.transformGizmo);
+            this.transformGizmo.dispose?.();
+            this.transformControls = null;
+        }
+        if (this.selectionBox) {
+            this.scene.remove(this.selectionBox);
+            this.selectionBox.geometry.dispose();
+            this.selectionBox.material.dispose();
+            this.selectionBox = null;
+        }
 
         this.selectionTool = null;
         this.controls.enabled = true;
@@ -395,7 +507,29 @@ export class SceneManager {
         destIndex.needsUpdate = true;
     }
 
+    updateBoxSelectionResult() {
+        if (!this.selectionBox || !this.meshModel || !this.highlightMesh) return;
 
+        // Cheap cull; skip heavy work if no overlap
+        if (!fastBoxHitsMesh(this.meshModel, this.selectionBox)) {
+            this.highlightMesh.visible = false;
+            this.highlightMesh.geometry.drawRange.count = 0;
+            return;
+        }
+
+        const indices = computeBoxSelectedTriangles(this.meshModel, this.selectionBox);
+
+        const srcIndex = this.meshModel.geometry.index;
+        const destIndex = this.highlightMesh.geometry.index;
+
+        for (let i = 0; i < indices.length; i++) {
+            destIndex.setX(i, srcIndex.getX(indices[i]));
+        }
+
+        this.highlightMesh.geometry.drawRange.count = indices.length;
+        destIndex.needsUpdate = true;
+        this.highlightMesh.visible = indices.length > 0;
+    }
     
     setShowWireframe(show) {
         if (this.meshModel && this.meshModel.material) {

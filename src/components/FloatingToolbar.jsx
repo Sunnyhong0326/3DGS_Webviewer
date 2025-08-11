@@ -17,6 +17,7 @@ const modes = [
 const selectionModes = [
   { id: 'lasso', label: 'Lasso', icon: <LucideLasso size={18} /> },
   { id: 'box', label: 'Box', icon: <LucideSquare size={18} /> },
+  { id: 'box3d', label: '3D Box', icon: <LucideCuboid size={18} /> },
 ];
 
 const FloatingToolbar = ({
