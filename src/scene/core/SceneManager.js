@@ -10,6 +10,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import { runRenderLoop } from './ViewerRenderer.js';
+import { GUI } from 'three/examples/jsm/libs/lil-gui.module.min.js';
 import { getQueryParam } from '../../utils/queryParam.js';
 import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d';
 import {
@@ -17,6 +18,7 @@ import {
     computeBoundsTree,
     disposeBoundsTree,
     acceleratedRaycast,
+    MeshBVH,
 } from 'three-mesh-bvh';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
@@ -42,6 +44,63 @@ function fastBoxHitsMesh(mesh, boxMesh) {
 
   // 3) Ask BVH for a cheap boolean
   return mesh.geometry.boundsTree.intersectsBox(_boxLocal, _boxToMesh);
+}
+
+
+function computeTightBoxFromIndexPositions(mesh, indexPositions) {
+  const pos = mesh.geometry.attributes.position;
+  const idx = mesh.geometry.index;
+  const box = new THREE.Box3();
+  const v = new THREE.Vector3();
+  const seen = new Set();
+
+  mesh.updateMatrixWorld(true);
+
+  for (let i = 0; i < indexPositions.length; i++) {
+    const idxPos = indexPositions[i];      // position in index buffer
+    const vertId = idx.getX(idxPos);       // actual vertex index
+    if (seen.has(vertId)) continue;
+    seen.add(vertId);
+
+    v.fromBufferAttribute(pos, vertId).applyMatrix4(mesh.matrixWorld);
+    box.expandByPoint(v);
+  }
+
+  return box;
+}
+
+function buildWorldspaceSelectedGeometry(mesh, indexPositions) {
+  const srcPos = mesh.geometry.attributes.position;
+  const srcIdx = mesh.geometry.index;
+
+  const triCount = indexPositions.length / 3;
+  if (triCount === 0) return null;
+
+  // Non-indexed: expand selected triangles to flat positions (fast & simple)
+  const outPositions = new Float32Array(triCount * 3 * 3);
+  const w = new THREE.Vector3();
+  const m = mesh.matrixWorld.clone(); // bake to world
+
+  let dst = 0;
+  for (let t = 0; t < triCount; t++) {
+    const i0 = srcIdx.getX(indexPositions[t*3 + 0]);
+    const i1 = srcIdx.getX(indexPositions[t*3 + 1]);
+    const i2 = srcIdx.getX(indexPositions[t*3 + 2]);
+
+    w.fromBufferAttribute(srcPos, i0).applyMatrix4(m);
+    outPositions[dst++] = w.x; outPositions[dst++] = w.y; outPositions[dst++] = w.z;
+    w.fromBufferAttribute(srcPos, i1).applyMatrix4(m);
+    outPositions[dst++] = w.x; outPositions[dst++] = w.y; outPositions[dst++] = w.z;
+    w.fromBufferAttribute(srcPos, i2).applyMatrix4(m);
+    outPositions[dst++] = w.x; outPositions[dst++] = w.y; outPositions[dst++] = w.z;
+  }
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.BufferAttribute(outPositions, 3));
+  // BVH needs bounds
+  geom.computeBoundingBox();
+  geom.computeBoundingSphere();
+  return geom;
 }
 
 
@@ -84,6 +143,28 @@ export class SceneManager {
 
         this.selectionBox = null;
         this.transformControls = null;
+
+        // voxelization
+        this._lastSelectionIndices = [];
+        this.selectionBBox = new THREE.Box3();
+        this.selectionBBoxHelper = null;
+
+        this.voxelParams = { size: 0.03, show: true };
+        this.voxelMesh = null;
+        this._voxelWorker = null;
+
+        // we'll build the GUI in init() after renderer/canvas exist
+        this.gui = new GUI();
+
+        const selFolder = this.gui.addFolder('Selection Tools');
+        selFolder.add({ tighten: () => this.makeTightBBox() }, 'tighten').name('Make Tight BBox');
+        selFolder.add({ vox: () => this.voxelizeSelection() }, 'vox').name('Voxelize Selection');
+
+        const voxFolder = this.gui.addFolder('Voxels');
+        voxFolder.add(this.voxelParams, 'size', 0.005, 0.2, 0.005).name('Voxel Size')
+            .onFinishChange(() => { /* user clicks "Voxelize" to apply */ });
+        voxFolder.add(this.voxelParams, 'show').name('Show Voxels')
+            .onChange(v => { if (this.voxelMesh) this.voxelMesh.visible = v; });
 
         this.currentRenderMode = '3dgs';
         this._initialized = false;
@@ -289,6 +370,150 @@ export class SceneManager {
         }
     }
 
+    _voxelizeMainThread(positions, bbox, voxelSize) {
+        // (A) build tiny world-space geometry & BVH of the selection
+        const geom = new THREE.BufferGeometry();
+        geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geom.computeBoundingBox();
+        geom.computeBoundingSphere();
+        const bvh = new MeshBVH(geom, { lazyGeneration: false });
+
+        // (B) prepare instanced mesh container
+        const size = new THREE.Vector3().subVectors(bbox.max, bbox.min);
+        const nx = Math.max(1, Math.ceil(size.x / voxelSize));
+        const ny = Math.max(1, Math.ceil(size.y / voxelSize));
+        const nz = Math.max(1, Math.ceil(size.z / voxelSize));
+        const cap = Math.min(nx * ny * nz, 1_000_000);
+
+        if (this.voxelMesh) {
+            this.scene.remove(this.voxelMesh);
+            this.voxelMesh.geometry?.dispose();
+            this.voxelMesh.material?.dispose();
+            this.voxelMesh = null;
+        }
+        if (!this.voxelParams.show) return;
+
+        const geo = new THREE.BoxGeometry(voxelSize, voxelSize, voxelSize);
+        const mat = new THREE.MeshStandardMaterial({
+            color: 0x29b6f6,
+            transparent: true,
+            opacity: 0.35,
+            depthWrite: false,
+        });
+        this.voxelMesh = new THREE.InstancedMesh(geo, mat, cap);
+        this.voxelMesh.count = 0;
+        this.scene.add(this.voxelMesh);
+
+        // (C) iterate grid in short bursts to keep FPS up
+        const half = voxelSize * 0.5;
+        const m = new THREE.Matrix4();
+        const box = new THREE.Box3();
+        const min = bbox.min;
+        let written = 0;
+
+        let ix = 0, iy = 0, iz = 0;
+        const step = () => {
+            const start = performance.now();
+            while (performance.now() - start < 10) { // ~10ms per frame
+                if (iy >= ny) {
+                    // done
+                    this.voxelMesh.count = written;
+                    this.voxelMesh.instanceMatrix.needsUpdate = true;
+                    return;
+                }
+
+                // compute current center
+                const cx = min.x + (ix + 0.5) * voxelSize;
+                const cy = min.y + (iy + 0.5) * voxelSize;
+                const cz = min.z + (iz + 0.5) * voxelSize;
+
+                box.min.set(cx - half, cy - half, cz - half);
+                box.max.set(cx + half, cy + half, cz + half);
+                const I = new THREE.Matrix4();
+                if (bvh.intersectsBox(box, I) && written < cap) {
+                    m.identity().setPosition(cx, cy, cz);
+                    this.voxelMesh.setMatrixAt(written++, m);
+                }
+
+                // advance grid
+                iz++;
+                if (iz >= nz) { iz = 0; ix++; }
+                if (ix >= nx) { ix = 0; iy++; }
+            }
+
+            // schedule next slice
+            this.voxelMesh.count = written;
+            this.voxelMesh.instanceMatrix.needsUpdate = true;
+            requestAnimationFrame(step);
+        };
+
+        requestAnimationFrame(step);
+    }
+
+    _startVoxelWorker(indices) {
+        // (single-thread version)
+        if (this.voxelMesh) {
+            this.scene.remove(this.voxelMesh);
+            this.voxelMesh.geometry?.dispose();
+            this.voxelMesh.material?.dispose();
+            this.voxelMesh = null;
+        }
+        if (!this.voxelParams.show) return;
+
+        const positions = this._buildWorldspaceSelectedPositions(indices);
+        if (!positions) return;
+
+        this._voxelizeMainThread(positions, this.selectionBBox, this.voxelParams.size);
+    }
+
+
+    makeTightBBox() {
+        const indices = this._lastSelectionIndices || [];
+        if (!indices.length) {
+            console.warn('[BBox] No selection yet.');
+            return;
+        }
+        this.updateSelectionBBox(indices);
+    }
+
+    voxelizeSelection() {
+        const indices = this._lastSelectionIndices || [];
+        if (!indices.length) {
+            console.warn('[Voxelize] No selection yet.');
+            return;
+        }
+        this.updateSelectionBBox(indices); // ensure bbox is up to date
+        this._startVoxelWorker(indices);
+    }
+
+
+    _buildWorldspaceSelectedPositions(indices) {
+        const mesh = this.meshModel;
+        const srcPos = mesh.geometry.attributes.position;
+        const srcIdx = mesh.geometry.index;
+
+        const triCount = indices.length / 3;
+        if (!triCount) return null;
+
+        const out = new Float32Array(triCount * 9);
+        const v = new THREE.Vector3();
+        let k = 0;
+
+        mesh.updateMatrixWorld(true);
+        const M = mesh.matrixWorld;
+
+        for (let t=0; t<triCount; t++) {
+            const i0 = srcIdx.getX(indices[t*3+0]);
+            const i1 = srcIdx.getX(indices[t*3+1]);
+            const i2 = srcIdx.getX(indices[t*3+2]);
+
+            v.fromBufferAttribute(srcPos, i0).applyMatrix4(M); out[k++]=v.x; out[k++]=v.y; out[k++]=v.z;
+            v.fromBufferAttribute(srcPos, i1).applyMatrix4(M); out[k++]=v.x; out[k++]=v.y; out[k++]=v.z;
+            v.fromBufferAttribute(srcPos, i2).applyMatrix4(M); out[k++]=v.x; out[k++]=v.y; out[k++]=v.z;
+        }
+        return out;
+    }
+
     enableSelection(selectionType) {
         console.log("selection type", selectionType);
         if (!this.meshModel || selectionType == null) return;
@@ -452,6 +677,10 @@ export class SceneManager {
             this.selectionBox = null;
         }
 
+        if (this._voxelWorker) { this._voxelWorker.terminate(); this._voxelWorker = null; }
+        if (this.voxelMesh) { this.scene.remove(this.voxelMesh); this.voxelMesh.geometry?.dispose(); this.voxelMesh.material?.dispose(); this.voxelMesh = null; }
+        if (this.selectionBBoxHelper) { this.selectionBBoxHelper.visible = false; }
+
         this.selectionTool = null;
         this.controls.enabled = true;
     }
@@ -486,6 +715,27 @@ export class SceneManager {
         this.selectionShape.geometry.attributes.position.needsUpdate = true;
     }
 
+    updateSelectionBBox(indices) {
+        if (!indices || indices.length === 0) {
+            if (this.selectionBBoxHelper) this.selectionBBoxHelper.visible = false;
+            return;
+        }
+
+        this.selectionBBox.copy(
+            computeTightBoxFromIndexPositions(this.meshModel, indices)
+        );
+
+        if (!this.selectionBBoxHelper) {
+            this.selectionBBoxHelper = new THREE.Box3Helper(this.selectionBBox, 0x00e676);
+            this.selectionBBoxHelper.name = 'SelectionBBoxHelper';
+            this.scene.add(this.selectionBBoxHelper);
+        } else {
+            this.selectionBBoxHelper.box.copy(this.selectionBBox);
+        }
+        this.selectionBBoxHelper.visible = true;
+    }
+
+
     updateSelectionResult() {
         if (!this.selectionTool || !this.meshModel || !this.highlightMesh) return;
 
@@ -495,6 +745,8 @@ export class SceneManager {
             useBoundsTree: true,
             selectWholeModel: false,
         });
+
+        this._lastSelectionIndices = indices;
 
         const srcIndex = this.meshModel.geometry.index;
         const destIndex = this.highlightMesh.geometry.index;
@@ -518,6 +770,7 @@ export class SceneManager {
         }
 
         const indices = computeBoxSelectedTriangles(this.meshModel, this.selectionBox);
+        this._lastSelectionIndices = indices;
 
         const srcIndex = this.meshModel.geometry.index;
         const destIndex = this.highlightMesh.geometry.index;
